@@ -1,0 +1,13 @@
+python-dotenv
+pydantic
+requests
+httpx
+mcp
+langchain-core
+langchain-community
+langchain-groq
+langchain-huggingface
+langchain-text-splitters
+langgraph
+faiss-cpu
+sentence-transformers
