@@ -39,6 +39,7 @@ class MCPClient:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding='utf-8',
             bufsize=1,
             cwd=os.path.dirname(os.path.abspath(__file__))
         )
@@ -154,7 +155,7 @@ def create_langchain_tool(mcp_client, tool_spec):
         prop_type = Any
         t = prop_def.get('type')
         if t == 'string': prop_type = str
-        elif t == 'integer': prop_type = Any
+        elif t == 'integer': prop_type = int
         elif t == 'number': prop_type = float
         elif t == 'boolean': prop_type = bool
         
@@ -223,27 +224,20 @@ def executor_node(state: AgentState):
     # Bind tools only for this node
     agent_with_tools = llm.bind_tools(all_tools)
     
-    # Filter messages to remove the Planner's chatter and Human Approval text.
-    filtered_messages = []
-    for i, msg in enumerate(state['messages']):
-        # Always keep the first message (User Query)
-        if i == 0:
-            filtered_messages.append(msg)
-            continue
-        
-        # Keep ToolMessages (outputs) and AIMessages that have tool_calls (previous actions)
-        if isinstance(msg, ToolMessage) or (isinstance(msg, AIMessage) and msg.tool_calls):
-            filtered_messages.append(msg)
-
     system_msg = SystemMessage(content=(
-        "You are a helpful assistant. You must call the tools to answer the user's request."
+        "You are a helpful assistant. The user has approved your plan. "
+        "You must now call the tools exactly as planned to answer the user's request. "
+        "Do not ask for permission again. Just execute the tools. "
+        "Ensure you use the correct tool name and arguments in JSON format."
     ))
-    response = agent_with_tools.invoke([system_msg] + filtered_messages)
+    
+    # Use the full conversation history so the model has context (Plan + Approval)
+    response = agent_with_tools.invoke([system_msg] + state['messages'])
     return {"messages": [response]}
 
 def should_continue(state: AgentState):
     last_message = state['messages'][-1]
-    if last_message.tool_calls:
+    if isinstance(last_message, AIMessage) and last_message.tool_calls:
         return "tools"
     return END
 
@@ -306,15 +300,18 @@ if __name__ == "__main__":
             # We initialize plan_approved to False for each new turn
             initial_state = {"messages": [HumanMessage(content=user_query)], "plan_approved": False}
             
-            for event in app.stream(initial_state):
-                for key, value in event.items():
-                    if key == "executor" and "messages" in value:
-                        msg = value["messages"][-1]
-                        if not msg.tool_calls: # Final answer
-                            print(f"Agent: {msg.content}")
-                    elif key == "planner":
-                        # We don't print here, the human node handles the print/input
-                        pass
+            try:
+                for event in app.stream(initial_state):
+                    for key, value in event.items():
+                        if key == "executor" and value and "messages" in value:
+                            msg = value["messages"][-1]
+                            if not msg.tool_calls: # Final answer
+                                print(f"Agent: {msg.content}")
+                        elif key == "planner":
+                            # We don't print here, the human node handles the print/input
+                            pass
+            except Exception as e:
+                print(f"Agent Error: {e}")
 
     finally:
         client1.stop()

@@ -227,7 +227,7 @@ def discover_tools(mcp_client):
 class AgentState(TypedDict):
     messages: Annotated[List[BaseMessage], lambda x, y: x + y]
 
-llm = ChatGroq(model_name="llama-3.1-8b-instant")
+llm = ChatGroq(model_name="llama-3.3-70b-versatile")
 
 workflow = StateGraph(AgentState)
 
